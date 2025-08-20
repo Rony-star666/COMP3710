@@ -636,3 +636,188 @@ n
 程序实现：设定 escape radius（通常 2 或 4）+ 最大迭代次数。
 
 如果在迭代过程中超过 escape radius → 发散；否则视为收敛或边界。
+or _ in range(iterations):
+        # 对当前所有线段并行变换，长度缩为 1/√2
+        Vp = (V @ R_plus.T)  * 1.0 / math.sqrt(2.0)   # 左转段
+        Vm = (V @ R_minus.T) * 1.0 / math.sqrt(2.0)   # 右转段
+
+        # 替换顺序：每条旧段 → [左转段, 右转段]
+        V = torch.stack([Vp, Vm], dim=1).reshape(-1, 2)  # (2N, 2)
+
+    # 从位移向量得到顶点坐标：前缀和（并行内核）
+    P = torch.cat([torch.zeros(1, 2, device=device), V.cumsum(dim=0)], dim=0)  # (2^it + 1, 2)
+    return P[:,0], P[:,1]  # x, y有没有别的简单的方法，要体现并行
+ChatGPT 说：
+已思考 54s
+
+当然有！给你两种更简单且确实用到并行/向量化的做法：
+
+方法一：复数 + Kronecker 积（最简洁）
+
+把每条线段看作复数位移 
+𝑧
+z，每轮替换就是把 
+𝑧
+z 同时乘以两个常数
+
+𝛼
+=
+1
+2
+𝑒
++
+𝑖
+𝜋
+/
+4
+α=
+2
+	​
+
+1
+	​
+
+e
++iπ/4
+、
+𝛽
+=
+1
+2
+𝑒
+−
+𝑖
+𝜋
+/
+4
+β=
+2
+	​
+
+1
+	​
+
+e
+−iπ/4
+ 并交替排列。
+用 torch.kron 一行就能把“所有线段”批量替换，最后 cumsum 得到顶点。
+
+import torch, math
+
+def levy_c_curve_kron(iters=15, device='cuda'):
+    # 初始只有一条水平线段：位移 1+0j
+    z = torch.tensor([1+0j], device=device, dtype=torch.complex64)
+
+    alpha = (1/math.sqrt(2)) * torch.exp(1j*torch.pi/4)   # 左转 +45°
+    beta  = (1/math.sqrt(2)) * torch.exp(-1j*torch.pi/4)  # 右转 -45°
+    base  = torch.tensor([alpha, beta], device=device, dtype=torch.complex64)
+
+    for _ in range(iters):
+        z = torch.kron(z, base)   # 并行“每段→两段”的替换：长度翻倍
+
+    p = torch.cat([torch.zeros(1, device=device, dtype=z.dtype), torch.cumsum(z, dim=0)])  # 顶点
+    x, y = p.real.float(), p.imag.float()
+    return x, y
+
+
+为何并行？ kron、exp、cumsum 都是大张量/向量化运算，GPU/多核可一次性计算海量元素，比逐字符海龟法高效得多。
+
+方法二：IFS “混沌游戏”批量采样（超并行）
+
+Lévy C 曲线的 IFS（迭代函数系统）可写为（复数形式）：
+
+𝑤
+1
+(
+𝑧
+)
+=
+1
+2
+𝑒
++
+𝑖
+𝜋
+/
+4
+𝑧
+,
+𝑤
+2
+(
+𝑧
+)
+=
+1
+−
+1
+2
+𝑒
+−
+𝑖
+𝜋
+/
+4
+𝑧
+.
+w
+1
+	​
+
+(z)=
+2
+	​
+
+1
+	​
+
+e
++iπ/4
+z,w
+2
+	​
+
+(z)=1−
+2
+	​
+
+1
+	​
+
+e
+−iπ/4
+z.
+
+我们一次生成 很多点（比如十万），每一步对全部点并行地随机选择 
+𝑤
+1
+w
+1
+	​
+
+ 或 
+𝑤
+2
+w
+2
+	​
+
+ 应用，多次迭代后点云就收敛到曲线的吸引子。
+
+import torch, math
+
+def levy_c_curve_chaos(n_points=200_000, n_iters=20, device='cuda'):
+    a = (1/math.sqrt(2)) * torch.exp(1j*torch.pi/4)
+    b = (1/math.sqrt(2)) * torch.exp(-1j*torch.pi/4)
+
+    z = torch.zeros(n_points, dtype=torch.complex64, device=device)
+    # 预热几步丢弃可更稳定，这里直接迭代
+    for _ in range(n_iters):
+        choice = torch.randint(0, 2, (n_points,), device=device)  # 0/1 随机
+        # 选择 w1 或 w2（按元素并行）
+        z = torch.where(choice.bool(), a*z, 1 - b*z)
+
+    return z.real.float(), z.imag.float()  # 这是点云采样（散点），不是按路径顺序的折线
+
+
+为何并行？ 每一步都是对长度为 n_points 的向量做逐元素选择和复乘，全部在 GPU 上批量进行；n_points 越大并行越明显。
