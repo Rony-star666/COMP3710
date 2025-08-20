@@ -21,7 +21,7 @@ def levy_c_curve_torch(iterations=15):
         s = new_s
 
     # 解释 L 系统
-    angle = torch.tensor(torch.pi / 4, device=device, dtype=dtype)  # 45°
+    angle = torch.tensor(torch.pi / 4, device=device, dtype=dtype)  # 顺时针45°
     x = [torch.tensor(0.0, device=device, dtype=dtype)]
     y = [torch.tensor(0.0, device=device, dtype=dtype)]
     direction = torch.tensor(0.0, device=device, dtype=dtype)       # 初始方向向右
@@ -33,9 +33,9 @@ def levy_c_curve_torch(iterations=15):
             x.append(x_new)
             y.append(y_new)
         elif ch == "+":
-            direction += angle
+            direction -= angle # 顺时针45°
         elif ch == "-":
-            direction -= angle
+            direction += angle # 逆时针45°
 
     # 转为张量
     x_t = torch.stack(x)
