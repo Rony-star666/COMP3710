@@ -1,36 +1,54 @@
-import torch, math
+import torch
 import matplotlib.pyplot as plt
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+dtype  = torch.float32
 
-def levy_c_curve_vectorized(iterations=15):
-    # 起始只有一条水平线段 v = (1, 0)
-    V = torch.tensor([[1.0, 0.0]], device=device)  # (N,2) 表示 N 条线段的位移向量
-    s2 = 1.0 / math.sqrt(2.0)
-    ang = math.pi / 4
+def levy_ifs_torch_no_burn(n_points=300000, seed=0, a=(0.0,0.0), b=(1.0,0.0)):
+    """
+    Lévy C 曲线 IFS
+    """
+    torch.manual_seed(seed)
 
-    # 旋转矩阵（±45°）
-    c, s = math.cos(ang), math.sin(ang)
-    R_plus  = torch.tensor([[ c, -s],
-                            [ s,  c]], device=device)   # 逆时针 +45°
-    R_minus = torch.tensor([[ c,  s],
-                            [-s,  c]], device=device)   # 顺时针 -45°
+    # 常量矩阵
+    r = 1.0 / torch.sqrt(torch.tensor(2.0, device=device, dtype=dtype))
+    c = torch.cos(torch.tensor(torch.pi/4, device=device, dtype=dtype))
+    s = torch.sin(torch.tensor(torch.pi/4, device=device, dtype=dtype))
 
-    for _ in range(iterations):
-        # 对当前所有线段并行变换，长度缩为 1/√2
-        Vp = (V @ R_plus.T)  * s2   # 左转段
-        Vm = (V @ R_minus.T) * s2   # 右转段
+    M1 = r * torch.tensor([[ c, -s],
+                           [ s,  c]], device=device, dtype=dtype)  # +45°
+    M2 = r * torch.tensor([[ c,  s],
+                           [-s,  c]], device=device, dtype=dtype)  # -45°
+    t2 = torch.tensor([1.0, 0.0], device=device, dtype=dtype)
 
-        # 替换顺序：每条旧段 → [左转段, 右转段]
-        V = torch.stack([Vp, Vm], dim=1).reshape(-1, 2)  # (2N, 2)
+    # 随机选择映射
+    random = torch.rand(n_points, device=device)
+    choices = random < 0.5
+    # 初始化点
+    z = torch.zeros((n_points, 2), device=device, dtype=dtype)
 
-    # 从位移向量得到顶点坐标：前缀和（并行内核）
-    P = torch.cat([torch.zeros(1, 2, device=device), V.cumsum(dim=0)], dim=0)  # (2^it + 1, 2)
-    return P[:,0], P[:,1]  # x, y
+    for i in range(1, n_points):
+        if choices[i]:
+            z[i] = (M1 @ z[i-1])
+        else:
+            z[i] = t2 + (M2 @ z[i-1])
 
-# 绘图示例
-x, y = levy_c_curve_vectorized(iterations=15)
-plt.figure(figsize=(8, 8))
-plt.plot(x.cpu().numpy(), y.cpu().numpy(), linewidth=0.5)
-plt.axis("equal"); plt.axis("off")
-plt.show()
+    # 仿射到线段 a->b
+    a_t = torch.tensor(a, device=device, dtype=dtype)
+    b_t = torch.tensor(b, device=device, dtype=dtype)
+    u   = b_t - a_t
+    perp= torch.stack([-u[1], u[0]])  # 旋转 90°
+
+    x = z[:, :1]
+    y = z[:, 1:]
+    world = a_t + x * u + y * perp
+
+    return world
+
+
+# 演示
+pts = levy_ifs_torch_no_burn(n_points=100_000, seed=42)
+pts_np = pts.detach().cpu().numpy()
+plt.figure(figsize=(7,7))
+plt.scatter(pts_np[:,0], pts_np[:,1], s=0.2, marker='.', linewidths=0)
+plt.axis('equal'); plt.axis('off'); plt.tight_layout(); plt.show()
