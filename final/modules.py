@@ -44,4 +44,26 @@ class GFBlock(nn.Module):
         y = self.mlp(y)
         y = y.permute(0, 3, 1, 2)
         return x + y
+        
+class GFNetBinary(nn.Module):
+    def __init__(self, height, width, in_channels=1, num_classes=2, depth=4, channels=64):
+        super().__init__()
+        self.height = height
+        self.width = width
+        self.proj = nn.Conv2d(in_channels, channels, kernel_size=1)
+        self.blocks = nn.ModuleList([
+            GFBlock(height, width, channels) for _ in range(depth)
+        ])
+        self.head = nn.Sequential(
+            nn.AdaptiveAvgPool2d(1),
+            nn.Flatten(),
+            nn.Linear(channels, num_classes)
+        )
+
+    def forward(self, x):
+        x = self.proj(x)
+        for b in self.blocks:
+            x = b(x)
+        out = self.head(x)
+        return out
 
