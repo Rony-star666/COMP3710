@@ -9,7 +9,14 @@ def set_seed(seed: int = 42):
     torch.cuda.manual_seed_all(seed)
 
 def get_transforms(img_size=224, gray=True, aug=True):
-    t = [transforms.Resize((img_size, img_size)), transforms.ToTensor()]
+    t = [transforms.Resize((img_size, img_size))]
+    if aug:
+        t += [
+            transforms.RandomHorizontalFlip(),
+            transforms.RandomVerticalFlip(p=0.2),
+            transforms.RandomRotation(15),
+        ]
+    t.append(transforms.ToTensor())
     if gray:
         t.append(transforms.Normalize(mean=[0.5], std=[0.5]))
         return transforms.Compose([transforms.Grayscale(num_output_channels=1)] + t)
@@ -17,6 +24,7 @@ def get_transforms(img_size=224, gray=True, aug=True):
         t.append(transforms.Normalize(mean=[0.485,0.456,0.406],
                                       std=[0.229,0.224,0.225]))
         return transforms.Compose(t)
+
 
 
 def get_loaders(data_root="ADNI/AD_NC", img_size=224, batch_size=32, num_workers=4, gray=True):
