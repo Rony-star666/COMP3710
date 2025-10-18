@@ -18,3 +18,30 @@ class GlobalFilter(nn.Module):
         x_out = x_ifft.permute(0, 3, 1, 2)
         return x_out
 
+class GFBlock(nn.Module):
+    def __init__(self, height, width, channels, mlp_ratio=4.0):
+        super().__init__()
+        self.gf = GlobalFilter(height, width, channels)
+        hidden_dim = int(channels * mlp_ratio)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, hidden_dim),
+            nn.GELU(),
+            nn.Linear(hidden_dim, channels),
+        )
+        self.norm1 = nn.LayerNorm(channels)
+        self.norm2 = nn.LayerNorm(channels)
+
+    def forward(self, x):
+        identity = x
+        x = x.permute(0, 2, 3, 1)
+        x = self.norm1(x)
+        x = x.permute(0, 3, 1, 2)
+        x = self.gf(x)
+        x = x + identity
+
+        y = x.permute(0, 2, 3, 1)
+        y = self.norm2(y)
+        y = self.mlp(y)
+        y = y.permute(0, 3, 1, 2)
+        return x + y
+
