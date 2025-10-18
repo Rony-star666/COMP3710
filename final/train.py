@@ -14,7 +14,7 @@ def train_one_epoch(model, train_loader, criterion, optimizer, device):
     model.train()
     total_loss, correct, total = 0, 0, 0
 
-    # 🔹 使用 tqdm 包装 DataLoader
+
     for imgs, labels in tqdm(train_loader, desc="Training", ncols=100):
         imgs, labels = imgs.to(device), labels.to(device)
         optimizer.zero_grad()
@@ -77,7 +77,7 @@ def main(args):
                           "mps" if torch.backends.mps.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    # 数据加载
+
     train_loader, val_loader, test_loader, class_names = get_loaders(
         data_root=args.data_root,
         img_size=args.img_size,
@@ -86,7 +86,7 @@ def main(args):
         gray=(args.in_channels == 1)
     )
 
-    # 模型、损失、优化器
+
     model = build_model(in_channels=args.in_channels, height=args.img_size, width=args.img_size)
 
 
@@ -117,8 +117,9 @@ def main(args):
             print("✅ Saved best model")
 
     # ---- 测试集评估 ----
-    test_loss, test_acc = evaluate(model, test_loader, criterion, device)
-    print(f"\nTest Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}")
+    test_loss, test_acc, test_auc = evaluate(model, test_loader, criterion, device)
+    print(f"\nTest Loss: {test_loss:.4f}, Test Acc: {test_acc:.4f}, Test AUC: {test_auc:.4f}")
+
 
 
 if __name__ == "__main__":

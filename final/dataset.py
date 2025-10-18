@@ -27,11 +27,7 @@ def get_transforms(img_size=224, gray=True, aug=True):
     return transforms.Compose(t)
 
 def get_loaders(data_root="ADNI/AD_NC", img_size=224, batch_size=32, num_workers=4, gray=True):
-    """
-    期望目录：
-    ADNI/AD_NC/train/{AD,NC}
-    ADNI/AD_NC/test/{AD,NC}
-    """
+   
     train_dir = os.path.join(data_root, "train")
     test_dir  = os.path.join(data_root, "test")
 
@@ -43,7 +39,7 @@ def get_loaders(data_root="ADNI/AD_NC", img_size=224, batch_size=32, num_workers
     tf_eval  = transforms.Compose(prefix + [tf_eval])
 
     full_train = datasets.ImageFolder(train_dir, transform=tf_train)
-    # 简单划分 90/10 做 val
+
     val_ratio = 0.1
     val_len = int(len(full_train) * val_ratio)
     train_len = len(full_train) - val_len
